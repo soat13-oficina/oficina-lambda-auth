@@ -1,0 +1,7 @@
+# Copie para backend.hcl (gitignored) e ajuste com o bucket do grupo:
+#   terraform init -backend-config=backend.hcl
+#
+# Use a MESMA bucket dos demais repositorios - este repositorio le os states
+# da plataforma e do banco de dentro dela.
+bucket = "SEU-BUCKET-DE-STATE-AQUI"
+region = "us-east-1"

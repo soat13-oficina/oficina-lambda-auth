@@ -1,0 +1,17 @@
+{
+  "name": "oficina-lambda-auth",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Function Serverless de autenticacao por CPF do Tech Challenge SOAT 13 - Fase 3",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "build": "bash scripts/build.sh"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.700.0"
+  }
+}

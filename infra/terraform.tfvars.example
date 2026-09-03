@@ -1,0 +1,15 @@
+# Copie para terraform.tfvars (gitignored) para uso local:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Na pipeline, state_bucket vem de TF_VAR_state_bucket (variable TF_STATE_BUCKET).
+state_bucket = "SEU-BUCKET-DE-STATE-AQUI"
+
+# Depois do primeiro deploy da aplicacao, preencha o hostname do NLB daquele
+# ambiente para publicar a rota ANY /{proxy+}:
+#   kubectl -n oficina-hml get svc oficina-api \
+#     -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+#
+# environments = {
+#   hml = { app_base_url = "http://k8s-xxxx.elb.us-east-1.amazonaws.com", ... }
+#   prd = { app_base_url = "http://k8s-yyyy.elb.us-east-1.amazonaws.com", ... }
+# }

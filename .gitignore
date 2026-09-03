@@ -1,0 +1,35 @@
+### Node ###
+node_modules/
+npm-debug.log*
+.npm
+
+### Pacote da Lambda (gerado por scripts/build.sh) ###
+build/
+build.zip
+
+### Terraform ###
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl
+crash.log
+crash.*.log
+tfplan
+*.tfplan
+plan.txt
+
+### Credenciais ###
+.env
+
+### Ferramentas / agentes ###
+/.agents/
+/.claude/
+/AGENTS.md
+/CLAUDE.md
+
+### OS / editores ###
+.DS_Store
+.idea/
+.vscode/
