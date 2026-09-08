@@ -146,9 +146,33 @@ Workflow: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
 | **Push em `master`** | Testes → build → **`apply` no workspace `prd`** → smoke test |
 | *Run workflow* manual | `plan`, `apply` ou `destroy` no ambiente escolhido |
 
+Jobs, no padrão de nomes comum aos quatro repositórios do projeto:
+
+| Job | O que faz |
+|---|---|
+| `testes` | `npm test` — 12 casos com `node:test`, sem framework externo |
+| `validacao` | `terraform fmt -check` e `terraform validate` |
+| `plan` | `terraform plan` do workspace, comentado no PR |
+| `deploy` | `npm run build` → `terraform apply` no workspace do ambiente → smoke test |
+| `destroy` | `terraform destroy` no workspace do ambiente |
+
 O smoke test faz um `POST /auth` real depois do apply e falha o job se o gateway
 não responder — pega rota mal configurada ou `lambda_permission` faltando, que
 são os erros silenciosos mais comuns aqui.
+
+### Workflow auxiliar — `Formatar Terraform`
+
+[`terraform-fmt.yml`](.github/workflows/terraform-fmt.yml), manual (*Run
+workflow*): roda `terraform fmt -recursive`, regrava o `infra/.terraform.lock.hcl`
+com os hashes de Linux, macOS e Windows e commita o resultado **na branch em que
+foi disparado** — escolha a sua branch de trabalho, não `master` nem
+`homologacao` (protegidas, o push seria recusado).
+
+Existe porque o gate `fmt -check` reprova qualquer desalinhamento e nem todo
+mundo do time tem o Terraform instalado na máquina. Enquanto o lockfile não
+estiver versionado, cada `terraform init` resolve as versões de provider do zero
+dentro das restrições de `infra/versions.tf`; rode este workflow uma vez na sua
+branch para fixá-las.
 
 ### Configuração exigida no repositório
 
