@@ -28,11 +28,49 @@ test('rejeita payload adulterado', () => {
   assert.throws(() => verificar(`${header}.${adulterado}.${assinatura}`, SEGREDO), /assinatura invalida/);
 });
 
-test('rejeita alg diferente de HS256 (confusao de algoritmo)', () => {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+test('rejeita alg "none" e algoritmos assimetricos (confusao de algoritmo)', () => {
   const payload = Buffer.from(JSON.stringify({ sub: '1', exp: 9999999999 })).toString('base64url');
 
-  assert.throws(() => verificar(`${header}.${payload}.`, SEGREDO), /algoritmo nao suportado/);
+  for (const alg of ['none', 'RS256', 'ES256', 'HS1']) {
+    const header = Buffer.from(JSON.stringify({ alg, typ: 'JWT' })).toString('base64url');
+    assert.throws(
+      () => verificar(`${header}.${payload}.`, SEGREDO),
+      /algoritmo nao suportado/,
+      `deveria recusar alg ${alg}`,
+    );
+  }
+});
+
+// A aplicacao em Spring Boot usa jjwt, que escolhe o algoritmo pelo TAMANHO da
+// chave: com o segredo de 64 caracteres gerado pelo Terraform, ela assina em
+// HS512. Se o authorizer so aceitasse HS256, todo token vindo do login de
+// e-mail e senha seria recusado no gateway.
+test('verifica tokens HS384 e HS512, nao so HS256', () => {
+  for (const algoritmo of ['HS256', 'HS384', 'HS512']) {
+    const token = assinar({ sub: '1' }, SEGREDO, { algoritmo });
+
+    const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8'));
+    assert.equal(header.alg, algoritmo);
+
+    assert.equal(verificar(token, SEGREDO).sub, '1', `deveria aceitar ${algoritmo}`);
+  }
+});
+
+test('assina em HS256 por padrao', () => {
+  const token = assinar({ sub: '1' }, SEGREDO);
+  const header = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8'));
+  assert.equal(header.alg, 'HS256');
+});
+
+test('trocar o alg do header sem reassinar nao passa', () => {
+  // Ataque classico: pegar um token HS256 valido e reescrever o header para
+  // HS512, esperando que a verificacao use outro digest sobre a mesma
+  // assinatura.
+  const token = assinar({ sub: '1' }, SEGREDO);
+  const [, payload, assinatura] = token.split('.');
+  const headerFalso = Buffer.from(JSON.stringify({ alg: 'HS512', typ: 'JWT' })).toString('base64url');
+
+  assert.throws(() => verificar(`${headerFalso}.${payload}.${assinatura}`, SEGREDO), /assinatura invalida/);
 });
 
 test('rejeita token expirado', () => {

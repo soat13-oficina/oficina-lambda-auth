@@ -6,6 +6,9 @@ name: CI/CD (Lambda de autenticacao)
 #   push master               -> testes + build + apply no workspace prd
 #   workflow_dispatch         -> plan | apply | destroy no ambiente escolhido
 #
+# Nomes de job seguem o padrao comum aos quatro repositorios do projeto:
+# testes . validacao . plan . deploy . destroy.
+#
 # PRE-REQUISITO: a plataforma (oficina-infra-k8s) e o banco
 # (oficina-infra-database) precisam estar aplicados NAQUELE ambiente - este
 # repositorio le os dois states via terraform_remote_state.
@@ -62,8 +65,8 @@ jobs:
       - name: npm test
         run: npm test
 
-  validate:
-    name: Terraform fmt + validate
+  validacao:
+    name: Validacao do Terraform (fmt + validate)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -84,8 +87,8 @@ jobs:
           terraform validate -no-color
 
   plan:
-    name: plan (${{ matrix.environment }})
-    needs: [testes, validate]
+    name: terraform plan (${{ matrix.environment }})
+    needs: [testes, validacao]
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == 'desenvolvimento') || (github.event_name == 'workflow_dispatch' && inputs.action == 'plan')
     runs-on: ubuntu-latest
     strategy:
@@ -159,15 +162,15 @@ jobs:
             }
 
   deploy:
-    name: deploy (${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || (github.ref_name == 'master' && 'prd') || 'hml' }})
-    needs: [testes, validate]
+    name: Deploy em ${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || (github.ref_name == 'master' && 'prd') || 'hml' }}
+    needs: [testes, validacao]
     if: (github.event_name == 'push' && (github.ref_name == 'master' || github.ref_name == 'homologacao')) || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
     runs-on: ubuntu-latest
     environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || (github.ref_name == 'master' && 'producao') || 'homologacao' }}
     env:
       TF_WORKSPACE_ENV: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || (github.ref_name == 'master' && 'prd') || 'hml' }}
     concurrency:
-      group: lambda-auth-${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || (github.ref_name == 'master' && 'prd') || 'hml' }}
+      group: oficina-lambda-auth-${{ (github.event_name == 'workflow_dispatch' && inputs.environment) || (github.ref_name == 'master' && 'prd') || 'hml' }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -227,12 +230,12 @@ jobs:
           esac
 
   destroy:
-    name: destroy (${{ inputs.environment }})
+    name: Destroy de ${{ inputs.environment }}
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment == 'prd' && 'producao' || 'homologacao' }}
     concurrency:
-      group: lambda-auth-${{ inputs.environment }}
+      group: oficina-lambda-auth-${{ inputs.environment }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4

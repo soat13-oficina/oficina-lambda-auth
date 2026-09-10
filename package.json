@@ -12,6 +12,7 @@
     "build": "bash scripts/build.sh"
   },
   "dependencies": {
-    "@aws-sdk/client-secrets-manager": "^3.700.0"
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "pg": "^8.23.0"
   }
 }
