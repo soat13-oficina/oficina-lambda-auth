@@ -30,14 +30,16 @@ variable "database_state_key" {
   default     = "oficina/infra-database.tfstate"
 }
 
-# Enquanto a emissao de token nao estiver implementada (ver
-# src/handlers/token.mjs), manter false: com o authorizer ligado e sem forma de
-# obter um token, TODAS as rotas da aplicacao ficariam inacessiveis pelo gateway.
-# Vire para true no mesmo PR que implementar o handler.
+# Com POST /auth emitindo token, as rotas proxy passam a exigir Bearer valido.
+#
+# Voltar para false e o interruptor de emergencia se a autenticacao quebrar
+# durante a demonstracao: o gateway segue roteando para a aplicacao, que mantem
+# a propria protecao por JWT. Nao abre a API - move a barreira da borda de volta
+# para dentro da aplicacao.
 variable "enable_authorizer" {
   description = "Liga o Lambda Authorizer nas rotas proxy da aplicacao."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "node_runtime" {
