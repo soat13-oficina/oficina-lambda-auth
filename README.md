@@ -4,12 +4,13 @@ Camada de **entrada e autenticação** do Tech Challenge SOAT 13 — Fase 3.
 Provisiona o **API Gateway HTTP** que é o endereço público do sistema e as duas
 funções **AWS Lambda** que emitem e validam o token de acesso.
 
-> ### ⚠️ Estado: base do repositório
-> A infraestrutura, a pipeline e a biblioteca de apoio (validação de CPF, JWT,
-> log estruturado) estão **prontas e testadas**. A consulta do cliente no banco
-> e a emissão do token ainda **não** foram escritas — ver [O que falta](#o-que-falta).
-> Enquanto isso, `POST /auth` responde **501** e o authorizer fica desligado
-> (`enable_authorizer = false`), de modo que o gateway já sobe e é demonstrável.
+> ### Estado: completo
+> Emissão de token, consulta do cliente e authorizer estão implementados, com
+> **30 testes** cobrindo o fluxo inteiro. O authorizer está **ligado**
+> (`enable_authorizer = true`): as rotas proxy exigem `Bearer` válido.
+>
+> Depende da migration `V19` no repositório `oficina-app`, que cria a coluna
+> `clientes.ativo` — ver [Contrato com o banco](#contrato-com-o-banco-e-com-a-aplicação).
 
 ## Lugar na arquitetura
 
@@ -61,7 +62,12 @@ expõe apenas `/auth`, e o `apply` funciona normalmente.
 { "cpf": "529.982.247-25" }
 
 // 200
-{ "token": "eyJhbGciOiJIUzI1NiIs...", "expiraEm": 3600, "tipo": "Bearer" }
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "expiraEm": 3600,
+  "tipo": "Bearer",
+  "cliente": { "id": "3f1c9a2e-...", "nome": "Fulano de Tal" }
+}
 
 // 400 CPF_INVALIDO · 404 CLIENTE_NAO_ENCONTRADO · 403 CLIENTE_INATIVO · 500 ERRO_INTERNO
 { "codigo": "CPF_INVALIDO", "mensagem": "CPF invalido." }
@@ -70,36 +76,51 @@ expõe apenas `/auth`, e o `apply` funciona normalmente.
 Toda resposta carrega o header `x-request-id`, o mesmo id que aparece no log
 estruturado e no access log do gateway.
 
-## O que já está pronto
+## Componentes
 
 | Arquivo | O que faz | Testes |
 |---|---|---|
-| `src/lib/cpf.mjs` | Validação por dígito verificador, normalização e máscara para log | 6 casos |
-| `src/lib/jwt.mjs` | Assina e verifica HS256 com `node:crypto`; comparação em tempo constante e rejeição de `alg` != HS256 | 6 casos |
+| `src/lib/cpf.mjs` | Validação por dígito verificador, normalização e máscara para log | 6 |
+| `src/lib/jwt.mjs` | Assina HS256 e verifica HS256/384/512 com `node:crypto`; comparação em tempo constante e recusa de `alg` inesperado | 8 |
+| `src/lib/banco.mjs` | Pool do PostgreSQL no escopo do módulo e consulta do cliente por CPF | 7 |
 | `src/lib/segredos.mjs` | Lê o Secrets Manager com cache no container | — |
 | `src/lib/log.mjs` | Log JSON com `requestId` de correlação | — |
-| `src/handlers/authorizer.mjs` | **Completo.** Valida o Bearer token e devolve `isAuthorized` + contexto | — |
-| `src/handlers/token.mjs` | Parse, validação de CPF, respostas de erro e log. Emissão de token pendente | — |
-| `infra/` | Terraform completo: gateway, 2 Lambdas, IAM, security groups, segredo, log groups | — |
+| `src/handlers/token.mjs` | Fluxo completo de `POST /auth` | 8 |
+| `src/handlers/authorizer.mjs` | Valida o Bearer e devolve `isAuthorized` + contexto | — |
+| `infra/` | Terraform: gateway, 2 Lambdas, IAM, security groups, segredo, log groups | — |
 
 ```bash
-npm test     # 12 testes, sem framework externo (node:test)
+npm test     # 30 testes, sem framework externo (node:test)
 ```
 
-## O que falta
+## Contrato com o banco e com a aplicação
 
-Um único bloco `TODO(auth)` em [`src/handlers/token.mjs`](src/handlers/token.mjs):
+Três acoplamentos que quebram o login se mudarem sem coordenação:
 
-1. `npm install pg`
-2. Ler credenciais: `await lerSegredoJson(process.env.DB_SECRET_ARN)`
-3. `SELECT id, nome, ativo FROM cliente WHERE cpf = $1` — ajustar ao schema real
-4. Não encontrado → `404`; inativo → `403`
-5. Encontrado e ativo → `assinar({ sub, clienteId, nome, roles }, segredo)` e devolver `200`
-6. No **mesmo PR**, virar `enable_authorizer` para `true` em `infra/variables.tf`
+**1 · A coluna `clientes.ativo`** — criada pela migration `V19` em `oficina-app`.
+Sem ela a consulta falha com `column ativo does not exist`. Aplique a migration
+**antes** de subir esta função.
 
-As variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SECRET_ARN`, `JWT_SECRET_ARN` e
-`TOKEN_TTL_SECONDS` já são injetadas pelo Terraform, e a IAM Role já tem
-permissão de leitura nos dois segredos — só nesses dois, e só os do ambiente.
+**2 · A normalização do documento na leitura:**
+
+```sql
+WHERE regexp_replace(cpf_ou_cnpj, '\D', '', 'g') = $1
+```
+
+A coluna guarda o documento **como foi digitado** — o domínio valida por dígito
+verificador mas persiste a string original, então o mesmo CPF pode estar gravado
+como `529.982.247-25` ou `52998224725`. A `V19` cria um índice funcional sobre a
+mesma expressão, então a comparação não cai em *sequential scan*.
+
+**3 · A claim `tipo: "CLIENTE"`** — é por ela que o `JwtAuthenticationFilter` da
+aplicação decide autenticar pelas próprias claims em vez de procurar o CPF na
+tabela `usuarios`. Um cliente não é usuário do sistema e não deve precisar ser.
+
+Sobre algoritmos: assinamos em **HS256** e verificamos **HS256, HS384 e HS512**.
+A assimetria é proposital — a `jjwt` da aplicação escolhe o algoritmo pelo
+*tamanho* da chave e, com o segredo de 64 caracteres gerado pelo Terraform,
+assina em HS512. Um authorizer restrito a HS256 recusaria no gateway todo token
+vindo do login de e-mail e senha.
 
 ## Tecnologias
 
@@ -146,9 +167,33 @@ Workflow: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
 | **Push em `master`** | Testes → build → **`apply` no workspace `prd`** → smoke test |
 | *Run workflow* manual | `plan`, `apply` ou `destroy` no ambiente escolhido |
 
+Jobs, no padrão de nomes comum aos quatro repositórios do projeto:
+
+| Job | O que faz |
+|---|---|
+| `testes` | `npm test` — 30 casos com `node:test`, sem framework externo |
+| `validacao` | `terraform fmt -check` e `terraform validate` |
+| `plan` | `terraform plan` do workspace, comentado no PR |
+| `deploy` | `npm run build` → `terraform apply` no workspace do ambiente → smoke test |
+| `destroy` | `terraform destroy` no workspace do ambiente |
+
 O smoke test faz um `POST /auth` real depois do apply e falha o job se o gateway
 não responder — pega rota mal configurada ou `lambda_permission` faltando, que
 são os erros silenciosos mais comuns aqui.
+
+### Workflow auxiliar — `Formatar Terraform`
+
+[`terraform-fmt.yml`](.github/workflows/terraform-fmt.yml), manual (*Run
+workflow*): roda `terraform fmt -recursive`, regrava o `infra/.terraform.lock.hcl`
+com os hashes de Linux, macOS e Windows e commita o resultado **na branch em que
+foi disparado** — escolha a sua branch de trabalho, não `master` nem
+`homologacao` (protegidas, o push seria recusado).
+
+Existe porque o gate `fmt -check` reprova qualquer desalinhamento e nem todo
+mundo do time tem o Terraform instalado na máquina. Enquanto o lockfile não
+estiver versionado, cada `terraform init` resolve as versões de provider do zero
+dentro das restrições de `infra/versions.tf`; rode este workflow uma vez na sua
+branch para fixá-las.
 
 ### Configuração exigida no repositório
 
