@@ -233,7 +233,40 @@ pesa é a plataforma (EKS/NAT) e o banco.
 - **O NLB da aplicação segue público**, então é possível contornar o gateway. Decisão consciente (a alternativa era VPC Link + NLB interno).
 - **CORS liberado para `*`.** Adequado à demo; um front real fixaria a origem.
 
+## API — Swagger, contrato e collection
+
+O gateway provisionado aqui é o **endereço público de todo o sistema**, então a
+documentação da API da aplicação é consumida através dele.
+
+| O quê | Onde |
+|---|---|
+| **Swagger UI** | `<api_gateway_url>/swagger-ui/index.html` |
+| **Contrato OpenAPI** | `<api_gateway_url>/v3/api-docs` |
+| **Collection do Insomnia** | [`oficina-app/docs/collections/oficina-api.insomnia.json`](https://github.com/soat13-oficina/oficina-app/blob/master/docs/collections/oficina-api.insomnia.json) — gerada a partir do OpenAPI |
+
+Ao importar a collection, aponte a variável `base_url` para o
+**`api_gateway_url`** deste repositório, e não para o NLB: é assim que as
+chamadas passam pelo authorizer e o fluxo fica igual ao de produção.
+
+O `POST /auth` **não está no OpenAPI da aplicação** — ele é servido pela Lambda,
+não pelo Spring. O contrato dele está em
+[Contrato de `POST /auth`](#contrato-de-post-auth), e é a primeira chamada de
+qualquer sessão: ela devolve o `token` que as demais usam no header
+`Authorization`.
+
+```bash
+# 1. obtenha o token
+curl -s -X POST "$API_GATEWAY_URL/auth" \
+  -H 'content-type: application/json' \
+  -d '{"cpf":"529.982.247-25"}'
+
+# 2. use nas rotas protegidas
+curl -s "$API_GATEWAY_URL/clientes" -H "Authorization: Bearer $TOKEN"
+```
+
 ## Documentação
 
 - [ADR 0001 — API Gateway HTTP, Lambda Authorizer e JWT HS256](docs/adr/0001-api-gateway-e-autorizacao.md)
+- [RFC 0003 — Estratégia de autenticação](https://github.com/soat13-oficina/oficina-app/blob/master/docs/rfc/0003-estrategia-de-autenticacao.md)
+- [Diagramas de sequência — autenticação por CPF e rota protegida](https://github.com/soat13-oficina/oficina-app/blob/master/docs/arquitetura/diagramas-sequencia.md)
 - ADRs de infraestrutura: repositórios `oficina-infra-k8s` e `oficina-infra-database`
