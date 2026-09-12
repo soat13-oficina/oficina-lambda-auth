@@ -67,7 +67,7 @@ variable "environments" {
 
   default = {
     hml = {
-      app_base_url       = ""
+      app_base_url       = "http://aeac9fbf58226455b9a1ebf93836aadd-d10b79f2e9980b7c.elb.us-east-1.amazonaws.com"
       token_ttl_seconds  = 3600
       lambda_memory_mb   = 256
       lambda_timeout_s   = 15
