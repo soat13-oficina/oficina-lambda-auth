@@ -4,7 +4,7 @@ output "environment" {
 }
 
 output "api_gateway_url" {
-  description = "URL base do API Gateway. E o endereco publico do sistema - use este, nao o do NLB."
+  description = "URL base do API Gateway. E o endereco publico do sistema - use este, nao o do ALB."
   value       = aws_apigatewayv2_stage.default.invoke_url
 }
 
@@ -38,12 +38,12 @@ output "authorizer_enabled" {
   value       = var.enable_authorizer
 }
 
-output "proxy_publicado" {
-  description = "Se a rota ANY /{proxy+} para a aplicacao existe. Falso enquanto app_base_url estiver vazio."
-  value       = local.publicar_proxy
+output "alb_url" {
+  description = "Endereco do ALB lido do SSM (/oficina/<env>/alb-url): destino das rotas proxy e da consulta de cliente."
+  value       = local.app_base_url
 }
 
-output "lambda_security_group_id" {
-  description = "Security group da funcao de token, ja liberado no RDS deste ambiente."
-  value       = aws_security_group.lambda.id
+output "webhook_mercadopago_url" {
+  description = "URL publica do webhook do Mercado Pago (vai em MERCADOPAGO_NOTIFICATION_URL do Environment do Billing)."
+  value       = "${aws_apigatewayv2_stage.default.invoke_url}webhooks/mercadopago"
 }

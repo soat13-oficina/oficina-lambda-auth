@@ -12,11 +12,11 @@ const CLIENTE_ATIVO = {
   ativo: true,
 };
 
-/** Monta o handler com banco e Secrets Manager de mentira. */
-function handlerCom({ cliente = CLIENTE_ATIVO, erroNoBanco = null } = {}) {
+/** Monta o handler com cliente (OS) e Secrets Manager de mentira. */
+function handlerCom({ cliente = CLIENTE_ATIVO, erroNaConsulta = null } = {}) {
   return criarHandler({
     buscarCliente: async () => {
-      if (erroNoBanco) throw erroNoBanco;
+      if (erroNaConsulta) throw erroNaConsulta;
       return cliente;
     },
     obterSegredo: async () => SEGREDO,
@@ -65,7 +65,7 @@ test('o token emitido carrega as claims que a aplicacao espera', async () => {
   assert.ok(claims.exp > claims.iat);
 });
 
-test('CPF invalido para em 400, sem consultar o banco', async () => {
+test('CPF invalido para em 400, sem consultar o OS', async () => {
   let consultou = false;
   const handler = criarHandler({
     buscarCliente: async () => {
@@ -79,7 +79,7 @@ test('CPF invalido para em 400, sem consultar o banco', async () => {
 
   assert.equal(r.statusCode, 400);
   assert.equal(corpoDe(r).codigo, 'CPF_INVALIDO');
-  assert.equal(consultou, false, 'nao deve ir ao banco com CPF reprovado');
+  assert.equal(consultou, false, 'nao deve consultar o OS com CPF reprovado');
 });
 
 test('corpo ausente ou nao-JSON responde 400', async () => {
@@ -105,9 +105,9 @@ test('cliente inativo responde 403 e nao emite token', async () => {
   assert.equal(corpoDe(r).token, undefined);
 });
 
-test('falha do banco vira 500 sem vazar detalhe interno', async () => {
+test('falha da consulta ao OS vira 500 sem vazar detalhe interno', async () => {
   const erro = new Error('connect ETIMEDOUT 10.0.201.15:5432');
-  const r = await handlerCom({ erroNoBanco: erro })(requisicao({ cpf: '529.982.247-25' }));
+  const r = await handlerCom({ erroNaConsulta: erro })(requisicao({ cpf: '529.982.247-25' }));
 
   assert.equal(r.statusCode, 500);
   assert.equal(corpoDe(r).codigo, 'ERRO_INTERNO');

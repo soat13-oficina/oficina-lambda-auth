@@ -1,16 +1,18 @@
 # oficina-lambda-auth — Function Serverless de autenticação + API Gateway
 
-Camada de **entrada e autenticação** do Tech Challenge SOAT 13 — Fase 3.
+Camada de **entrada e autenticação** do Tech Challenge SOAT 13 — Fases 3 e 4.
 Provisiona o **API Gateway HTTP** que é o endereço público do sistema e as duas
 funções **AWS Lambda** que emitem e validam o token de acesso.
 
-> ### Estado: completo
+> ### Estado: completo (Fase 4)
 > Emissão de token, consulta do cliente e authorizer estão implementados, com
-> **30 testes** cobrindo o fluxo inteiro. O authorizer está **ligado**
+> **34 testes** cobrindo o fluxo inteiro. O authorizer está **ligado**
 > (`enable_authorizer = true`): as rotas proxy exigem `Bearer` válido.
 >
-> Depende da migration `V19` no repositório `oficina-app`, que cria a coluna
-> `clientes.ativo` — ver [Contrato com o banco](#contrato-com-o-banco-e-com-a-aplicação).
+> **Fase 4:** a função `token` deixou de ler o banco do OS Service. Ela consulta o cliente por HTTP
+> (`GET /internal/clientes/por-cpf/{cpf}`, [ADR 0002](docs/adr/0002-consulta-de-cliente-pelo-os-service.md)),
+> saiu da VPC e o gateway passou a apontar para o **ALB** que serve os três serviços, lido do SSM.
+> Código **nunca aplicado** na AWS: foi validado por testes e por `terraform validate`.
 
 ## Lugar na arquitetura
 
@@ -23,17 +25,19 @@ flowchart LR
         GW["API Gateway HTTP"]
         GW -->|"AWS_PROXY"| TOKEN["Lambda<br/>token"]
         GW -.->|"authorizer"| AUTHZ["Lambda<br/>authorizer"]
-        GW -->|"HTTP_PROXY<br/>+ x-request-id"| NLB["NLB público"]
+        GW -->|"HTTP_PROXY<br/>+ x-request-id"| ALB["ALB do ambiente<br/>(IngressGroup)"]
+        TOKEN -->|"GET /internal/clientes/por-cpf<br/>X-Service-Token"| ALB
 
         subgraph vpc["VPC"]
-            TOKEN --> RDS[("RDS<br/>PostgreSQL")]
-            NLB --> APP["API Spring Boot<br/>no EKS"]
-            APP --> RDS
+            ALB --> OS["OS Service"]
+            ALB --> BILL["Billing Service"]
+            ALB --> EXE["Execution Service"]
         end
 
-        SM["Secrets Manager<br/>jwt-secret"] --> TOKEN
+        SM["Secrets Manager<br/>jwt-secret · service-token"] --> TOKEN
         SM --> AUTHZ
-        SM -.->|"lido no deploy"| APP
+        SM -.->|"lido no deploy"| OS
+        SSM["SSM<br/>/oficina/env/alb-url"] -.->|"lido no apply"| GW
     end
 
     style GW fill:#7f4f24,color:#fff
@@ -41,19 +45,22 @@ flowchart LR
     style AUTHZ fill:#2d6a4f,color:#fff
 ```
 
-**Pré-requisito:** `oficina-infra-k8s` **e** `oficina-infra-database` aplicados
-naquele ambiente — este repositório lê os dois states via `terraform_remote_state`.
+**Pré-requisito:** os três serviços implantados naquele ambiente. O deploy de cada um grava o
+endereço do ALB em `/oficina/<env>/alb-url` (SSM) e o `infra/` do OS cria o segredo
+`oficina/<env>/service-token`; o `plan`/`apply` daqui lê os dois (`infra/ssm.tf`). Este repositório não lê
+o state de nenhum outro.
 
 ## Rotas
 
 | Rota | Integração | Autenticação |
 |---|---|---|
 | `POST /auth` | Lambda `token` | Pública — é onde o token é obtido |
-| `ANY /{proxy+}` | NLB público da aplicação | Lambda Authorizer (quando `enable_authorizer = true`) |
+| `POST /webhooks/mercadopago` | ALB → Billing | **Pública, sem authorizer** — o Mercado Pago não tem JWT; a assinatura `x-signature` é conferida pelo Billing ([ADR 0007](https://github.com/soat13-oficina/oficina-app/blob/desenvolvimento/docs/adr/0007-mercado-pago-checkout-pro.md)) |
+| `ANY /{proxy+}` | ALB → OS, Billing ou Execution, por caminho | Lambda Authorizer (quando `enable_authorizer = true`) |
 
-A rota proxy só é criada depois que `app_base_url` do ambiente é preenchido — o
-hostname do NLB só existe após o primeiro deploy da aplicação. Até lá o gateway
-expõe apenas `/auth`, e o `apply` funciona normalmente.
+O ALB é um só por ambiente e roteia por caminho (ADR 0008); o gateway tem uma integração só. O
+`/internal/**` **não** é roteado pelo gateway: a Lambda `token` chega ao OS direto no ALB, onde só
+`/internal/clientes/*` com o header `X-Service-Token` é encaminhado.
 
 ### Contrato de `POST /auth`
 
@@ -82,35 +89,28 @@ estruturado e no access log do gateway.
 |---|---|---|
 | `src/lib/cpf.mjs` | Validação por dígito verificador, normalização e máscara para log | 6 |
 | `src/lib/jwt.mjs` | Assina HS256 e verifica HS256/384/512 com `node:crypto`; comparação em tempo constante e recusa de `alg` inesperado | 8 |
-| `src/lib/banco.mjs` | Pool do PostgreSQL no escopo do módulo e consulta do cliente por CPF | 7 |
+| `src/lib/cliente-api.mjs` | Consulta o cliente no OS Service (`GET /internal/clientes/por-cpf/{cpf}`, `X-Service-Token`, timeout de 3 s); 404 vira "não existe", qualquer outra falha vira erro | 11 |
 | `src/lib/segredos.mjs` | Lê o Secrets Manager com cache no container | — |
 | `src/lib/log.mjs` | Log JSON com `requestId` de correlação | — |
 | `src/handlers/token.mjs` | Fluxo completo de `POST /auth` | 8 |
 | `src/handlers/authorizer.mjs` | Valida o Bearer e devolve `isAuthorized` + contexto | — |
-| `infra/` | Terraform: gateway, 2 Lambdas, IAM, security groups, segredo, log groups | — |
+| `infra/` | Terraform: gateway, 2 Lambdas, IAM, segredo do JWT, leitura do ALB (SSM) e do `service-token`, log groups | — |
 
 ```bash
-npm test     # 30 testes, sem framework externo (node:test)
+npm test     # 34 testes, sem framework externo (node:test)
 ```
 
-## Contrato com o banco e com a aplicação
+## Contrato com o OS Service e com a aplicação
 
 Três acoplamentos que quebram o login se mudarem sem coordenação:
 
-**1 · A coluna `clientes.ativo`** — criada pela migration `V19` em `oficina-app`.
-Sem ela a consulta falha com `column ativo does not exist`. Aplique a migration
-**antes** de subir esta função.
+**1 · `GET /internal/clientes/por-cpf/{cpf}` no OS** — contrato em
+[`docs/contratos/rest-interno.md`](https://github.com/soat13-oficina/oficina-app/blob/desenvolvimento/docs/contratos/rest-interno.md)
+do `oficina-app`. Resposta `200 {id, nome, ativo}`; `404` se não existe; `401` se o `X-Service-Token`
+está errado. O inativo **volta** (`ativo: false`) e quem recusa com `403 CLIENTE_INATIVO` é esta função.
 
-**2 · A normalização do documento na leitura:**
-
-```sql
-WHERE regexp_replace(cpf_ou_cnpj, '\D', '', 'g') = $1
-```
-
-A coluna guarda o documento **como foi digitado** — o domínio valida por dígito
-verificador mas persiste a string original, então o mesmo CPF pode estar gravado
-como `529.982.247-25` ou `52998224725`. A `V19` cria um índice funcional sobre a
-mesma expressão, então a comparação não cai em *sequential scan*.
+**2 · O segredo `oficina/<env>/service-token`** — criado pelo `infra/` do OS, lido por nome
+(`SERVICE_TOKEN_ARN`). Sem ele o `plan` falha com mensagem clara.
 
 **3 · A claim `tipo: "CLIENTE"`** — é por ela que o `JwtAuthenticationFilter` da
 aplicação decide autenticar pelas próprias claims em vez de procurar o CPF na
@@ -124,8 +124,8 @@ vindo do login de e-mail e senha.
 
 ## Tecnologias
 
-Node.js 22 (ESM, zero dependência além do AWS SDK) · `node:test` · AWS Lambda ·
-API Gateway HTTP (v2) · AWS Secrets Manager · CloudWatch Logs · Terraform ≥ 1.10
+Node.js 22 (ESM, `fetch` nativo, zero dependência além do AWS SDK) · `node:test` · AWS Lambda ·
+API Gateway HTTP (v2) · AWS Secrets Manager · SSM Parameter Store · CloudWatch Logs · Terraform ≥ 1.10
 com workspaces · GitHub Actions.
 
 ## Como rodar e implantar
@@ -147,13 +147,9 @@ terraform apply
 `archive_file` empacota `build/`; sem ele o plan falha com *no such file or
 directory*. A pipeline já faz isso.
 
-Depois do primeiro deploy da aplicação, pegue o hostname do NLB e preencha
-`app_base_url` para publicar a rota proxy:
-
-```bash
-kubectl -n oficina-hml get svc oficina-api \
-  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-```
+Ordem: `oficina-infra-k8s` → `oficina-infra-database` → `infra/` do OS, do Billing e da Execution →
+deploy dos três serviços (o ALB nasce no primeiro `Ingress` e cada pipeline grava o endereço no SSM) →
+**este repositório**. Não há mais `app_base_url` para preencher à mão.
 
 ## CI/CD
 
@@ -171,7 +167,7 @@ Jobs, no padrão de nomes comum aos quatro repositórios do projeto:
 
 | Job | O que faz |
 |---|---|
-| `testes` | `npm test` — 30 casos com `node:test`, sem framework externo |
+| `testes` | `npm test` — 34 casos com `node:test`, sem framework externo |
 | `validacao` | `terraform fmt -check` e `terraform validate` |
 | `plan` | `terraform plan` do workspace, comentado no PR |
 | `deploy` | `npm run build` → `terraform apply` no workspace do ambiente → smoke test |
@@ -230,7 +226,8 @@ pesa é a plataforma (EKS/NAT) e o banco.
 ## Limitações conhecidas (escopo de desafio técnico)
 
 - **HS256 com segredo compartilhado.** RS256 + JWKS seria a evolução correta; a justificativa está no ADR.
-- **O NLB da aplicação segue público**, então é possível contornar o gateway. Decisão consciente (a alternativa era VPC Link + NLB interno).
+- **O ALB segue público**, então é possível contornar o gateway: cada serviço valida o JWT por conta própria, e o `/internal/clientes` exige o `X-Service-Token` (o ALB só confere que o header veio; o OS confere o valor). A alternativa — ALB interno + VPC Link — está registrada como evolução no ADR 0008 do `oficina-app`.
+- **O login depende do OS Service no ar.** Antes lia o banco direto. A evolução (OS publica `ClienteCadastrado/Atualizado`, uma Lambda mantém uma tabela DynamoDB de CPFs) está descrita no plano da Fase 4.
 - **CORS liberado para `*`.** Adequado à demo; um front real fixaria a origem.
 
 ## API — Swagger, contrato e collection
@@ -245,7 +242,7 @@ documentação da API da aplicação é consumida através dele.
 | **Collection do Insomnia** | [`oficina-app/docs/collections/oficina-api.insomnia.json`](https://github.com/soat13-oficina/oficina-app/blob/master/docs/collections/oficina-api.insomnia.json) — gerada a partir do OpenAPI |
 
 Ao importar a collection, aponte a variável `base_url` para o
-**`api_gateway_url`** deste repositório, e não para o NLB: é assim que as
+**`api_gateway_url`** deste repositório, e não para o ALB: é assim que as
 chamadas passam pelo authorizer e o fluxo fica igual ao de produção.
 
 O `POST /auth` **não está no OpenAPI da aplicação** — ele é servido pela Lambda,

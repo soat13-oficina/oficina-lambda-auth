@@ -11,7 +11,8 @@ locals {
 
   prefixo = "${var.project}-auth-${local.environment}"
 
-  # A rota proxy so existe depois que a aplicacao subiu naquele ambiente e o
-  # NLB ganhou hostname. Ate la o gateway expoe apenas POST /auth.
-  publicar_proxy = local.cfg.app_base_url != ""
+  # Endereco do ALB do ambiente (IngressGroup oficina-<env>, ADR 0008 do oficina-app): o pipeline de deploy
+  # de cada servico grava em /oficina/<env>/alb-url depois do rollout. Se o parametro nao existe, o plan
+  # falha aqui - o gateway so sobe depois do deploy dos servicos (apply: ... deploy dos 3 -> lambda-auth).
+  app_base_url = data.aws_ssm_parameter.alb_url.insecure_value
 }
