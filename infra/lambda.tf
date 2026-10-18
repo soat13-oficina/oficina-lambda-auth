@@ -32,26 +32,20 @@ resource "aws_lambda_function" "token" {
   memory_size = local.cfg.lambda_memory_mb
   timeout     = local.cfg.lambda_timeout_s
 
-  # Dentro da VPC para alcancar o RDS nas subnets de banco.
-  vpc_config {
-    subnet_ids         = local.private_subnet_ids
-    security_group_ids = [aws_security_group.lambda.id]
-  }
-
+  # Fora da VPC: o cliente vem do OS Service por HTTP (ALB publico, ver ssm.tf), nao do banco. Sem ENI por
+  # container, o cold start encurta e some o security group e a regra no RDS.
   environment {
     variables = {
       AMBIENTE          = local.environment
       JWT_SECRET_ARN    = aws_secretsmanager_secret.jwt.arn
-      DB_SECRET_ARN     = local.db_secret_arn
-      DB_HOST           = local.db_address
-      DB_PORT           = tostring(local.db_port)
-      DB_NAME           = local.db_name
+      SERVICE_TOKEN_ARN = data.aws_secretsmanager_secret.service_token.arn
+      OS_BASE_URL       = local.app_base_url
       TOKEN_TTL_SECONDS = tostring(local.cfg.token_ttl_seconds)
     }
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.token_vpc,
+    aws_iam_role_policy_attachment.token_logs,
     aws_cloudwatch_log_group.token,
   ]
 }

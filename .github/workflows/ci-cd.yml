@@ -9,9 +9,10 @@ name: CI/CD (Lambda de autenticacao)
 # Nomes de job seguem o padrao comum aos quatro repositorios do projeto:
 # testes . validacao . plan . deploy . destroy.
 #
-# PRE-REQUISITO: a plataforma (oficina-infra-k8s) e o banco
-# (oficina-infra-database) precisam estar aplicados NAQUELE ambiente - este
-# repositorio le os dois states via terraform_remote_state.
+# PRE-REQUISITO: os tres servicos ja foram implantados NAQUELE ambiente. O deploy de cada um grava o
+# endereco do ALB em /oficina/<env>/alb-url (SSM) e o infra/ do OS cria o segredo
+# oficina/<env>/service-token; o plan/apply le os dois (infra/ssm.tf). Este repositorio nao le o state de
+# nenhum outro.
 #
 # Configuracao necessaria no repositorio:
 #   Secrets:   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
@@ -45,7 +46,6 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   TF_VERSION: latest
   NODE_VERSION: '22'
-  TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
 
 jobs:
   testes:

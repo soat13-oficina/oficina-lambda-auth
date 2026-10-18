@@ -11,7 +11,7 @@ data "aws_iam_policy_document" "lambda_trust" {
 }
 
 # ---------------------------------------------------------------------------
-# Funcao de token: escreve log, cria ENI na VPC e le dois segredos.
+# Funcao de token: escreve log e le dois segredos (JWT e service-token). Sem VPC, sem banco.
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "token" {
@@ -19,11 +19,9 @@ resource "aws_iam_role" "token" {
   assume_role_policy = data.aws_iam_policy_document.lambda_trust.json
 }
 
-# Permissoes de rede (ec2:CreateNetworkInterface e afins) exigidas por qualquer
-# Lambda anexada a uma VPC.
-resource "aws_iam_role_policy_attachment" "token_vpc" {
+resource "aws_iam_role_policy_attachment" "token_logs" {
   role       = aws_iam_role.token.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 data "aws_iam_policy_document" "token_segredos" {
@@ -31,10 +29,10 @@ data "aws_iam_policy_document" "token_segredos" {
     sid     = "LeSegredosDoAmbiente"
     actions = ["secretsmanager:GetSecretValue"]
     # Apenas os dois segredos deste ambiente - nada de "*". A funcao de hml nao
-    # consegue ler a credencial do banco de producao.
+    # consegue ler os segredos de producao.
     resources = [
       aws_secretsmanager_secret.jwt.arn,
-      local.db_secret_arn,
+      data.aws_secretsmanager_secret.service_token.arn,
     ]
   }
 }
@@ -46,7 +44,7 @@ resource "aws_iam_role_policy" "token_segredos" {
 }
 
 # ---------------------------------------------------------------------------
-# Authorizer: so escreve log e le o segredo do JWT. Sem VPC, sem acesso ao banco.
+# Authorizer: so escreve log e le o segredo do JWT. Sem VPC.
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "authorizer" {
