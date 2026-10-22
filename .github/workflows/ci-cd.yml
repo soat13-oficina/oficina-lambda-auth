@@ -10,9 +10,9 @@ name: CI/CD (Lambda de autenticacao)
 # testes . validacao . plan . deploy . destroy.
 #
 # PRE-REQUISITO: os tres servicos ja foram implantados NAQUELE ambiente. O deploy de cada um grava o
-# endereco do ALB em /oficina/<env>/alb-url (SSM) e o infra/ do OS cria o segredo
-# oficina/<env>/service-token; o plan/apply le os dois (infra/ssm.tf). Este repositorio nao le o state de
-# nenhum outro.
+# endereco do ALB em /oficina/<env>/alb-url (SSM) e o infra/ do OS cria os segredos
+# oficina/<env>/service-token e oficina/<env>/jwt-secret; o plan/apply le os tres (infra/ssm.tf e
+# infra/secrets.tf). Este repositorio nao le o state de nenhum outro.
 #
 # Configuracao necessaria no repositorio:
 #   Secrets:   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY

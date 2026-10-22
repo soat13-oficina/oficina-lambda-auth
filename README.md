@@ -46,9 +46,9 @@ flowchart LR
 ```
 
 **Pré-requisito:** os três serviços implantados naquele ambiente. O deploy de cada um grava o
-endereço do ALB em `/oficina/<env>/alb-url` (SSM) e o `infra/` do OS cria o segredo
-`oficina/<env>/service-token`; o `plan`/`apply` daqui lê os dois (`infra/ssm.tf`). Este repositório não lê
-o state de nenhum outro.
+endereço do ALB em `/oficina/<env>/alb-url` (SSM) e o `infra/` do OS cria os segredos
+`oficina/<env>/service-token` e `oficina/<env>/jwt-secret`; o `plan`/`apply` daqui lê os três
+(`infra/ssm.tf` e `infra/secrets.tf`). Este repositório não lê o state de nenhum outro.
 
 ## Rotas
 
@@ -94,7 +94,7 @@ estruturado e no access log do gateway.
 | `src/lib/log.mjs` | Log JSON com `requestId` de correlação | — |
 | `src/handlers/token.mjs` | Fluxo completo de `POST /auth` | 8 |
 | `src/handlers/authorizer.mjs` | Valida o Bearer e devolve `isAuthorized` + contexto | — |
-| `infra/` | Terraform: gateway, 2 Lambdas, IAM, segredo do JWT, leitura do ALB (SSM) e do `service-token`, log groups | — |
+| `infra/` | Terraform: gateway, 2 Lambdas, IAM, leitura do ALB (SSM), do `jwt-secret` e do `service-token`, log groups | — |
 
 ```bash
 npm test     # 34 testes, sem framework externo (node:test)
@@ -208,13 +208,18 @@ branch para fixá-las.
 
 ## Contrato do segredo JWT com o repositório da aplicação
 
-O segredo HMAC é criado **aqui**, em `oficina/<ambiente>/jwt-secret` no Secrets
-Manager, e lido pela pipeline de `oficina-app` para popular `JWT_SECRET` no
-cluster. Este repositório é a **fonte da verdade** do segredo.
+O segredo HMAC fica em `oficina/<ambiente>/jwt-secret` no Secrets Manager. Desde a
+Fase 4 ele é criado pelo `infra/` do OS Service (`oficina-app`), como o
+`service-token`, e lido **por nome** aqui (`infra/secrets.tf`) e pelas pipelines
+dos três serviços, que populam `JWT_SECRET` no cluster.
 
-> Um `terraform destroy` aqui gera um segredo novo no próximo `apply`, o que
-> invalida todos os tokens em circulação e exige um novo deploy da aplicação
-> para ressincronizar.
+Motivo da mudança: o deploy do Billing e da Execution exige o segredo, e este
+repositório exige o ALB que esses deploys criam. Com o segredo aqui, a subida do
+ambiente tinha um ciclo; com ele no `infra/` do OS, a ordem é linear
+(`infra/` dos serviços → deploy dos serviços → esta Lambda).
+
+> Um `destroy` do `infra/` do OS gera um segredo novo no próximo `apply`, o que
+> invalida todos os tokens em circulação. Um `destroy` daqui não mexe nele.
 
 ## Custo estimado
 
