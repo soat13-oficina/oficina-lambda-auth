@@ -14,13 +14,13 @@ output "auth_endpoint" {
 }
 
 output "jwt_secret_name" {
-  description = "Nome do segredo do JWT no Secrets Manager. CONTRATO: a pipeline de oficina-app le por este nome para popular JWT_SECRET no cluster."
-  value       = aws_secretsmanager_secret.jwt.name
+  description = "Nome do segredo do JWT no Secrets Manager (criado pelo infra/ do OS Service, lido por nome)."
+  value       = data.aws_secretsmanager_secret.jwt.name
 }
 
 output "jwt_secret_arn" {
   description = "ARN do segredo do JWT no Secrets Manager."
-  value       = aws_secretsmanager_secret.jwt.arn
+  value       = data.aws_secretsmanager_secret.jwt.arn
 }
 
 output "token_function_name" {

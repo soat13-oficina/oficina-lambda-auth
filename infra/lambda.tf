@@ -37,7 +37,7 @@ resource "aws_lambda_function" "token" {
   environment {
     variables = {
       AMBIENTE          = local.environment
-      JWT_SECRET_ARN    = aws_secretsmanager_secret.jwt.arn
+      JWT_SECRET_ARN    = data.aws_secretsmanager_secret.jwt.arn
       SERVICE_TOKEN_ARN = data.aws_secretsmanager_secret.service_token.arn
       OS_BASE_URL       = local.app_base_url
       TOKEN_TTL_SECONDS = tostring(local.cfg.token_ttl_seconds)
@@ -78,7 +78,7 @@ resource "aws_lambda_function" "authorizer" {
   environment {
     variables = {
       AMBIENTE       = local.environment
-      JWT_SECRET_ARN = aws_secretsmanager_secret.jwt.arn
+      JWT_SECRET_ARN = data.aws_secretsmanager_secret.jwt.arn
     }
   }
 

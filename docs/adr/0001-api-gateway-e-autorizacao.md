@@ -67,6 +67,11 @@ lê por esse nome e materializa `JWT_SECRET` no `Secret` do Kubernetes.
 > `terraform destroy` aqui invalida todos os tokens em circulação e exige um
 > novo deploy da aplicação para ressincronizar. Está registrado no README.
 
+> **Atualização (Fase 4):** o segredo passou para o `infra/` do OS Service
+> (`oficina-app`) e é lido aqui por nome. O deploy do Billing e da Execution
+> exige o segredo e esta Lambda exige o ALB criado por esses deploys; com o
+> segredo aqui, a subida do ambiente tinha um ciclo. Nome e formato não mudaram.
+
 ## Consequências
 
 **Positivas**

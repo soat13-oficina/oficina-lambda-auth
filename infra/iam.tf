@@ -31,7 +31,7 @@ data "aws_iam_policy_document" "token_segredos" {
     # Apenas os dois segredos deste ambiente - nada de "*". A funcao de hml nao
     # consegue ler os segredos de producao.
     resources = [
-      aws_secretsmanager_secret.jwt.arn,
+      data.aws_secretsmanager_secret.jwt.arn,
       data.aws_secretsmanager_secret.service_token.arn,
     ]
   }
@@ -61,7 +61,7 @@ data "aws_iam_policy_document" "authorizer_segredos" {
   statement {
     sid       = "LeApenasOSegredoDoJwt"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.jwt.arn]
+    resources = [data.aws_secretsmanager_secret.jwt.arn]
   }
 }
 
