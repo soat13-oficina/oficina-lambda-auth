@@ -116,10 +116,21 @@ resource "aws_apigatewayv2_route" "app" {
 # Webhook do Mercado Pago: mais especifica que a ANY /{proxy+}, entao vence. SEM authorizer, de proposito:
 # quem chama e o Mercado Pago, que nao tem JWT. A protecao e a assinatura x-signature, validada pelo Billing
 # (MERCADOPAGO_WEBHOOK_SECRET; vazio = nenhuma notificacao aceita).
+#
+# Integracao propria: a "app" aponta para /{proxy}, e a AWS recusa a rota cujo route key nao tem a variavel
+# {proxy}. Tambem nao acrescenta nada ao x-request-id: o Billing usa o x-request-id do Mercado Pago na conta
+# da assinatura, e o valor que o gateway acrescentaria invalidaria toda notificacao.
+resource "aws_apigatewayv2_integration" "webhook_mercadopago" {
+  api_id             = aws_apigatewayv2_api.main.id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "POST"
+  integration_uri    = "${local.app_base_url}/webhooks/mercadopago"
+}
+
 resource "aws_apigatewayv2_route" "webhook_mercadopago" {
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "POST /webhooks/mercadopago"
-  target    = "integrations/${aws_apigatewayv2_integration.app.id}"
+  target    = "integrations/${aws_apigatewayv2_integration.webhook_mercadopago.id}"
 
   authorization_type = "NONE"
 }
