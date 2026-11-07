@@ -5,29 +5,9 @@ variable "project" {
 }
 
 variable "aws_region" {
-  description = "Regiao AWS. Precisa ser a mesma da plataforma e do banco."
+  description = "Regiao AWS. Precisa ser a mesma da plataforma (o ALB lido do SSM e as filas ficam nela)."
   type        = string
   default     = "us-east-1"
-}
-
-# A MESMA bucket do backend deste repositorio. O backend parcial nao expoe seu
-# valor como variavel, por isso ele precisa ser informado explicitamente
-# (-var, TF_VAR_state_bucket ou terraform.tfvars).
-variable "state_bucket" {
-  description = "Bucket S3 com os states da plataforma e do banco, lidos aqui via terraform_remote_state."
-  type        = string
-}
-
-variable "platform_state_key" {
-  description = "Key do state da plataforma. Deve casar com o backend de oficina-infra-k8s."
-  type        = string
-  default     = "oficina/infra-k8s.tfstate"
-}
-
-variable "database_state_key" {
-  description = "Key do state do banco. Deve casar com o backend de oficina-infra-database."
-  type        = string
-  default     = "oficina/infra-database.tfstate"
 }
 
 # Com POST /auth emitindo token, as rotas proxy passam a exigir Bearer valido.
@@ -53,10 +33,6 @@ variable "node_runtime" {
 variable "environments" {
   description = "Configuracao por ambiente, indexada pelo nome do workspace do Terraform."
   type = map(object({
-    # Hostname publico do NLB criado pelo Service da aplicacao no Kubernetes.
-    # Vazio ate o primeiro deploy da aplicacao naquele ambiente: enquanto
-    # estiver vazio, a rota proxy nao e criada e so /auth existe no gateway.
-    app_base_url       = string
     token_ttl_seconds  = number
     lambda_memory_mb   = number
     lambda_timeout_s   = number
@@ -67,7 +43,6 @@ variable "environments" {
 
   default = {
     hml = {
-      app_base_url       = "http://aeac9fbf58226455b9a1ebf93836aadd-d10b79f2e9980b7c.elb.us-east-1.amazonaws.com"
       token_ttl_seconds  = 3600
       lambda_memory_mb   = 256
       lambda_timeout_s   = 15
@@ -76,7 +51,6 @@ variable "environments" {
       throttling_burst   = 40
     }
     prd = {
-      app_base_url       = ""
       token_ttl_seconds  = 3600
       lambda_memory_mb   = 512
       lambda_timeout_s   = 15

@@ -1,7 +1,10 @@
 # API Gateway HTTP (v2). Ponto unico de entrada do sistema:
 #
-#   POST /auth      -> Lambda de token          (publico, emite o JWT)
-#   ANY  /{proxy+}  -> NLB publico da aplicacao (protegido pelo authorizer)
+#   POST /auth                  -> Lambda de token       (publico, emite o JWT)
+#   POST /webhooks/mercadopago  -> ALB (Billing)         (publico, sem authorizer: o Mercado Pago nao
+#                                                         tem JWT; a assinatura x-signature e conferida
+#                                                         pelo proprio Billing - ADR 0007 do oficina-app)
+#   ANY  /{proxy+}              -> ALB dos 3 servicos    (protegido pelo authorizer)
 #
 # A escolha por HTTP API em vez de REST API e a razao de o authorizer ser
 # Lambda (e nao o JWT authorizer nativo) estao em
@@ -80,19 +83,17 @@ resource "aws_lambda_permission" "authorizer" {
 }
 
 # ---------------------------------------------------------------------------
-# Rota proxy para a aplicacao no Kubernetes
+# Rotas para os servicos no Kubernetes
 #
-# So existe quando app_base_url esta preenchido - o hostname do NLB so nasce
-# depois do primeiro deploy da aplicacao naquele ambiente.
+# Um unico ALB por ambiente (IngressGroup, ADR 0008) roteia por caminho para OS, Billing e Execution; o
+# gateway so precisa de uma integracao. O hostname vem do SSM (ssm.tf), gravado pelo deploy dos servicos.
 # ---------------------------------------------------------------------------
 
 resource "aws_apigatewayv2_integration" "app" {
-  count = local.publicar_proxy ? 1 : 0
-
   api_id             = aws_apigatewayv2_api.main.id
   integration_type   = "HTTP_PROXY"
   integration_method = "ANY"
-  integration_uri    = "${local.cfg.app_base_url}/{proxy}"
+  integration_uri    = "${local.app_base_url}/{proxy}"
 
   request_parameters = {
     "overwrite:path" = "$request.path.proxy"
@@ -104,14 +105,23 @@ resource "aws_apigatewayv2_integration" "app" {
 }
 
 resource "aws_apigatewayv2_route" "app" {
-  count = local.publicar_proxy ? 1 : 0
-
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "ANY /{proxy+}"
-  target    = "integrations/${aws_apigatewayv2_integration.app[0].id}"
+  target    = "integrations/${aws_apigatewayv2_integration.app.id}"
 
   authorization_type = var.enable_authorizer ? "CUSTOM" : "NONE"
   authorizer_id      = var.enable_authorizer ? aws_apigatewayv2_authorizer.jwt[0].id : null
+}
+
+# Webhook do Mercado Pago: mais especifica que a ANY /{proxy+}, entao vence. SEM authorizer, de proposito:
+# quem chama e o Mercado Pago, que nao tem JWT. A protecao e a assinatura x-signature, validada pelo Billing
+# (MERCADOPAGO_WEBHOOK_SECRET; vazio = nenhuma notificacao aceita).
+resource "aws_apigatewayv2_route" "webhook_mercadopago" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /webhooks/mercadopago"
+  target    = "integrations/${aws_apigatewayv2_integration.app.id}"
+
+  authorization_type = "NONE"
 }
 
 # ---------------------------------------------------------------------------

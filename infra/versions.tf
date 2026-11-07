@@ -10,10 +10,6 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.7"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
   }
 
   # Backend parcial: bucket e region vem de backend.hcl (nao versionado).

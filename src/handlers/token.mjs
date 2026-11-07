@@ -1,7 +1,7 @@
 /**
  * POST /auth - emissao de token a partir do CPF.
  *
- * Fluxo: valida o CPF por digito verificador, consulta o cliente na base,
+ * Fluxo: valida o CPF por digito verificador, consulta o cliente no OS Service (HTTP),
  * checa se esta ativo e devolve um JWT que a API em Spring Boot aceita.
  *
  * Contrato:
@@ -21,7 +21,7 @@
  */
 import { cpfValido, normalizarCpf, cpfParaLog } from '../lib/cpf.mjs';
 import { assinar } from '../lib/jwt.mjs';
-import { buscarClientePorCpf } from '../lib/banco.mjs';
+import { buscarClientePorCpf } from '../lib/cliente-api.mjs';
 import { lerSegredo } from '../lib/segredos.mjs';
 import { log, idDaRequisicao } from '../lib/log.mjs';
 
@@ -43,7 +43,7 @@ function resposta(statusCode, corpo, requestId) {
 /**
  * Fabrica do handler, com as dependencias externas injetaveis.
  *
- * Existe para que os testes rodem o fluxo inteiro sem banco nem Secrets
+ * Existe para que os testes rodem o fluxo inteiro sem OS nem Secrets
  * Manager, em vez de exercitarem so as funcoes auxiliares. A exportacao
  * "handler" abaixo e a que a Lambda usa, ja com as dependencias reais.
  */
@@ -76,7 +76,7 @@ export function criarHandler({
         return resposta(400, { codigo: 'CPF_INVALIDO', mensagem: 'CPF invalido.' }, requestId);
       }
 
-      const cliente = await buscarCliente(cpf);
+      const cliente = await buscarCliente(cpf, { requestId });
 
       if (!cliente) {
         // Mesma mensagem generica para nao encontrado e inativo seria mais
